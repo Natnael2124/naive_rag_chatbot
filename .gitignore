@@ -1,0 +1,5 @@
+# .gitignore - ignore virtualenv, caches, compiled python files, and local env file
+venv/
+__pycache__/
+*.pyc
+.env
