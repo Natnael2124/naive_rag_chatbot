@@ -19,6 +19,14 @@ with st.sidebar:
     st.title("Upload your documents")
     file = st.file_uploader("Upload your PDF", type="pdf")
 
+# Initialize embeddings outside file loop so caching works
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2",  # CPU-friendly
+    model_kwargs={"device": "cpu"}
+)
+
+index_path = "faiss_index"
+
 if file is not None:
     # Extract text from PDF
     pdf_pages = PdfReader(file)
@@ -29,20 +37,18 @@ if file is not None:
     # Break text into chunks
     text_splitter = RecursiveCharacterTextSplitter(
         separators=["\n\n", "\n", " "],
-        chunk_size=1500,
-        chunk_overlap=150,
+        chunk_size=1000,
+        chunk_overlap=200,
         length_function=len
     )
     chunks = text_splitter.split_text(text)
 
-    # Generate embeddings using the new HuggingFace class
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",  # CPU-friendly
-        model_kwargs={"device": "cpu"}
-    )
-
-    # Create vector store
-    vector_store = FAISS.from_texts(chunks, embeddings)
+    # Either load existing FAISS or build new one
+    if os.path.exists(index_path):
+        vector_store = FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+    else:
+        vector_store = FAISS.from_texts(chunks, embeddings)
+        vector_store.save_local(index_path)
 
     # Get user query
     user_query = st.text_input("What is your query?")
@@ -84,7 +90,15 @@ Answer:
         )
 
         result = qa({"query": user_query})  # must be 'query'!
+        
+        # Show final answer
         st.subheader("Answer")
         st.write(result['result'])
+
+        # Show sources
+        st.subheader("Sources")
+        for i, doc in enumerate(result["source_documents"], start=1):
+            st.write(f"**Source {i}:** {doc.page_content[:300]}...")
 else:
     st.write("Please upload a PDF document to start.")
+
