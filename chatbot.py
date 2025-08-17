@@ -6,7 +6,7 @@ from langchain.vectorstores import FAISS
 from dotenv import load_dotenv
 import os
 from langchain_groq import ChatGroq
-from langchain.chains.question_answering import load_qa_chain
+from langchain.chains import RetrievalQA
 
 load_dotenv()  # load variables from .env
 os.environ["GROQ_API_KEY"] = os.getenv("GROQ_API_KEY") 
@@ -51,16 +51,36 @@ if file is not None:
     user_query = st.text_input("What is your query?")
 
     if user_query:
-        match=vector_store.similarity_search(user_query)
         llm = ChatGroq(
             model="openai/gpt-oss-20b",
-            temperature=0.70,
+            temperature=0.45,
             max_retries=2,
         )
-        chain = load_qa_chain(llm, chain_type="stuff")
-        response = chain.run(input_documents=match, question=user_query)
+        qa = RetrievalQA.from_chain_type(
+            llm=llm,
+            retriever=vector_store.as_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 3}  # number of documents to retrieve   
+            ),
+            chain_type="stuff",
+            return_source_documents=True,
+            chain_type_kwargs={
+                "prompt": """You are a document-based assistant.
+Use ONLY the following context to answer the question.
+If the answer is not in the context, say exactly:
+"I don’t know about this topic based on the uploaded document."
+
+Context:
+{context}
+
+Question: {question}
+Answer:"""
+            },
+        )
+       
+        result = qa({"query": user_query})
         st.subheader("Answer")
-        st.write(response)
+        st.write(result['result'])
     
 else:
     st.write("Please upload a PDF document to start.")
